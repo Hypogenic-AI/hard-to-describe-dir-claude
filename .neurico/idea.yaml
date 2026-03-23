@@ -1,0 +1,27 @@
+idea:
+  title: Manipulation of Hard to Describe Directions
+  domain: nlp
+  hypothesis: 'There exist directions in the residual stream of language models that
+    are difficult to manipulate via explicit feature-naming prompts, but if a feature
+    is linearly represented in the residual stream, it should be possible to finetune
+    a new token to reference and manipulate it more easily.
+
+    '
+  background:
+    description: 'Some directions in the residual stream of language models are hard
+      to manipulate by referring to a specific feature by name. For example, while
+      it is easy to prompt a model to rhyme, making its output sound less like an
+      AI is more challenging. The hypothesis is that anything linearly represented
+      in the residual stream should be easy to finetune a new token to reference,
+      making such features easier to manipulate.
+
+      '
+  metadata:
+    author: Ari Holtzman
+    source: IdeaHub
+    source_url: https://hypogenic.ai/ideahub/idea/lTAqrX1qHahRbw9F6d3v
+    idea_id: manipulation_of_hard_to_descri_20260323_021503_50a4f7b4
+    created_at: '2026-03-23T02:15:03.457485'
+    status: submitted
+    github_repo_name: hard-to-describe-dir-claude
+    github_repo_url: https://github.com/Hypogenic-AI/hard-to-describe-dir-claude
