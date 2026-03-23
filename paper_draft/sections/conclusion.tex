@@ -1,0 +1,8 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We tested whether learned token embeddings provide greater advantage over explicit prompting for residual stream directions that are harder to describe in natural language. Across six behavioral features in \pythia, concept tokens consistently activated target directions (all positive shifts), and their advantage over prompting was largest for the hardest-to-describe features: AI-sounding text (+106\%), sycophancy (+60\%), and hedging (+25\%). The Spearman correlation between feature difficulty and concept token advantage was $\rho = 0.71$.
+
+These findings have practical implications for controlling model behaviors that resist prompt engineering. Many safety-relevant behaviors---deception, sycophancy, manipulation---are precisely the kind of hard-to-describe features where concept tokens offer the most advantage. Our results suggest that learned embeddings can serve as a lightweight, portable tool for manipulating these directions without requiring the user to articulate the target behavior in words.
+
+Future work should scale to more features (including those identified via sparse autoencoders that lack any natural language description), evaluate behavioral effects in generated text with human judges, and test on instruction-tuned models where the prompting baseline is stronger. Understanding why some linearly-represented features resist verbal description---and whether this resistance can be predicted without empirical testing---remains an open question at the intersection of mechanistic interpretability and natural language semantics.

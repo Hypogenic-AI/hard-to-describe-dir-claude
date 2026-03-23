@@ -1,0 +1,97 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{Direction Quality}
+\label{sec:direction_quality}
+
+\Tabref{tab:directions} reports the quality of extracted feature directions. All six features produce separable directions, though effect sizes vary considerably. Verbosity ($d = 1.48$) and hedging ($d = 1.20$) yield the strongest separations, while sentiment ($d = 0.18$) and formality ($d = 0.22$) are weaker. The weak directions for easy-to-describe features may reflect the subtlety of these features in a base (non-instruction-tuned) model, where sentiment and formality are less structurally distinct than in chat models.
+
+\begin{table}[t]
+    \centering
+    \caption{Quality of extracted feature directions at layer~12 of \pythia. Direction separation is the $L_2$ distance between positive and negative class centroids. Cohen's $d$ measures the standardized separation.}
+    \begin{tabular}{@{}lccc@{}}
+        \toprule
+        \textbf{Feature} & \textbf{Difficulty} & \textbf{Separation} & \textbf{Cohen's $d$} \\
+        \midrule
+        Sentiment    & Easy        & 2.79   & 0.18 \\
+        Formality    & Easy        & 7.25   & 0.22 \\
+        Verbosity    & Medium      & 242.73 & 1.48 \\
+        Sycophancy   & Medium-hard & 33.57  & 0.48 \\
+        AI-sounding  & Hard        & 51.09  & 0.43 \\
+        Hedging      & Hard        & 146.04 & 1.20 \\
+        \bottomrule
+    \end{tabular}
+    \label{tab:directions}
+\end{table}
+
+\subsection{Describability Varies Across Features}
+\label{sec:describability_results}
+
+\Tabref{tab:describability} shows the describability scores. As expected, easy-to-describe features tend to have more consistent prompt effects, while hard features show high variance and sometimes negative mean shifts. AI-sounding text has a negative describability score ($-2.23$), meaning prompts designed to make text sound more AI-like actually push activations in the \emph{opposite} direction on average. The standard deviation for AI-sounding ($8.55$) and sycophancy ($6.00$) is an order of magnitude larger than for sentiment ($0.74$), confirming that these features are indeed harder to reference via natural language.
+
+\begin{table}[t]
+    \centering
+    \caption{Describability scores for each feature, measured as the mean activation shift (projected onto the target direction) when contrasting positive vs.\ negative prompts on the same completion text. Higher scores indicate more consistent prompt-to-direction alignment. Negative scores mean prompts tend to push activations opposite to the intended direction.}
+    \begin{tabular}{@{}lccc@{}}
+        \toprule
+        \textbf{Feature} & \textbf{Expected Difficulty} & \textbf{Mean Shift} & \textbf{Std} \\
+        \midrule
+        Sentiment    & Easy        & 1.17   & 0.74 \\
+        Formality    & Easy        & $-1.06$  & 2.01 \\
+        Verbosity    & Medium      & 10.27  & 5.18 \\
+        Sycophancy   & Medium-hard & 2.24   & 6.00 \\
+        AI-sounding  & Hard        & $-2.23$  & 8.55 \\
+        Hedging      & Hard        & 9.01   & 5.20 \\
+        \bottomrule
+    \end{tabular}
+    \label{tab:describability}
+\end{table}
+
+Note that describability does not perfectly align with our \emph{a priori} difficulty ordering. Formality has a slightly negative score despite being classified as ``easy,'' suggesting that while formality is easy to \emph{name}, prompting a base model to change formality may still be inconsistent. Verbosity and hedging have relatively high describability despite being classified as medium and hard, respectively. We return to these discrepancies in \secref{sec:discussion}.
+
+\subsection{Concept Tokens Outperform Prompting for Hard Features}
+\label{sec:main_results}
+
+\Tabref{tab:main} presents the central results. Concept tokens produce positive activation shifts for all six features (range: $2.21$ to $55.13$), demonstrating that learned embeddings can reference residual stream directions regardless of describability. For the three hardest features, concept tokens substantially outperform prompting:
+
+\begin{itemize}[leftmargin=*,itemsep=1pt,topsep=2pt]
+    \item \textbf{AI-sounding}: \ct achieves $55.13 \pm 5.60$ vs.\ prompting's $26.79 \pm 4.76$ (+106\%).
+    \item \textbf{Sycophancy}: \ct achieves $53.86 \pm 5.52$ vs.\ prompting's $33.51 \pm 5.60$ (+60\%).
+    \item \textbf{Hedging}: \ct achieves $45.76 \pm 4.64$ vs.\ prompting's $36.74 \pm 5.99$ (+25\%).
+\end{itemize}
+
+For easy-to-describe features, prompting performs comparably or better: formality prompting ($16.26$) outperforms \ct ($3.59$) by $4.5\times$, and verbosity prompting ($38.04$) outperforms \ct ($19.10$) by $2\times$. Sentiment is an outlier where prompting produces a \emph{negative} shift ($-6.50$), indicating that positive-sentiment prompts actually push the base model's activations away from the positive-sentiment direction.
+
+\begin{table}[t]
+    \centering
+    \caption{Steering effectiveness comparison across methods. Values are mean activation shift (projected onto the target direction) $\pm$ standard error over 20 test texts. \textbf{Bold} indicates the best non-\caa method per feature. \ctadvantage is the difference between \ct and \prompting shifts.}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{@{}llcccc@{}}
+        \toprule
+        \textbf{Feature} & \textbf{Difficulty} & \textbf{\ct} & \textbf{Prompting} & \textbf{\caa} & \textbf{\ctadvantage} \\
+        \midrule
+        Sentiment    & Easy        & \textbf{2.21} {\scriptsize $\pm$ 0.15}  & $-6.50$ {\scriptsize $\pm$ 1.28}  & $106.86$ {\scriptsize $\pm$ 34.79}  & $+8.71$ \\
+        Formality    & Easy        & $3.59$ {\scriptsize $\pm$ 0.66}          & \textbf{16.26} {\scriptsize $\pm$ 2.61}  & $-301.32$ {\scriptsize $\pm$ 53.06} & $-12.67$ \\
+        Verbosity    & Medium      & $19.10$ {\scriptsize $\pm$ 1.93}         & \textbf{38.04} {\scriptsize $\pm$ 6.14}  & $-806.05$ {\scriptsize $\pm$ 53.90} & $-18.94$ \\
+        Sycophancy   & Medium-hard & \textbf{53.86} {\scriptsize $\pm$ 5.52}  & $33.51$ {\scriptsize $\pm$ 5.60}  & $-798.94$ {\scriptsize $\pm$ 53.68} & $+20.35$ \\
+        AI-sounding  & Hard        & \textbf{55.13} {\scriptsize $\pm$ 5.60}  & $26.79$ {\scriptsize $\pm$ 4.76}  & $-813.21$ {\scriptsize $\pm$ 49.10} & $+28.34$ \\
+        Hedging      & Hard        & \textbf{45.76} {\scriptsize $\pm$ 4.64}  & $36.74$ {\scriptsize $\pm$ 5.99}  & $-800.49$ {\scriptsize $\pm$ 57.52} & $+9.02$ \\
+        \bottomrule
+    \end{tabular}
+    }
+    \label{tab:main}
+\end{table}
+
+\caa steering produces large-magnitude shifts that are frequently in the \emph{wrong direction} (negative values for 4 of 6 features). This is consistent with \citet{braun2025unreliability}'s finding that directly adding vectors to activations at a single layer creates unpredictable cascading effects through subsequent layers.
+
+\subsection{The Advantage Increases with Difficulty}
+\label{sec:correlation}
+
+The Spearman rank correlation between expected feature difficulty (ordinal: easy=1, easy=2, medium=3, medium-hard=4, hard=5, hard=6) and \ctadvantage is $\rho = 0.71$ ($p = 0.12$). While not statistically significant at $p < 0.05$ with only $n = 6$ features, this represents a large effect size. A power analysis indicates that approximately 12 features would be needed to achieve significance at this effect size.
+
+All per-feature paired $t$-tests comparing \ct and prompting shift distributions are significant at $p < 0.001$, with Cohen's $d > 4.0$ in all cases. The methods produce reliably different activation patterns for every feature; the question is only which method achieves a larger shift in the target direction.
+
+\subsection{Concept Token Training Dynamics}
+\label{sec:training}
+
+All six concept tokens converge within 300 optimization steps, reaching final cosine similarities above 0.5 between the induced activation shift and the target direction. The optimization landscape appears smooth: no feature required learning rate tuning or exhibited training instability. The hardest features (AI-sounding, sycophancy) produce the largest absolute \ct shifts ($55.13$ and $53.86$), suggesting that these directions may have particularly strong linear structure that the embedding can exploit despite their resistance to verbal description.

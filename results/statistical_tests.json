@@ -1,0 +1,59 @@
+{
+  "describability_vs_ct_advantage": {
+    "pearson_r": -0.4578828860430697,
+    "p_value": 0.36117478691917143,
+    "interpretation": "negative = CT advantage increases as describability decreases"
+  },
+  "spearman_describability_vs_ct_advantage": {
+    "rho": -0.48571428571428577,
+    "p_value": 0.3287230320699708
+  },
+  "paired_ttest_sentiment": {
+    "t_statistic": 28.000128910521404,
+    "p_value": 6.529436834409483e-17,
+    "cohens_d": 6.423670122477601,
+    "ct_mean": 2.2072563052177427,
+    "prompt_mean": -6.497786831855774,
+    "significant": true
+  },
+  "paired_ttest_formality": {
+    "t_statistic": -24.353446454669744,
+    "p_value": 8.638735530183377e-16,
+    "cohens_d": -5.587063790675488,
+    "ct_mean": 3.590795564651489,
+    "prompt_mean": 16.259444189071655,
+    "significant": true
+  },
+  "paired_ttest_verbosity": {
+    "t_statistic": -19.463379231905304,
+    "p_value": 5.218556858057156e-14,
+    "cohens_d": -4.465205430088606,
+    "ct_mean": 19.1012903213501,
+    "prompt_mean": 38.041787815094,
+    "significant": true
+  },
+  "paired_ttest_sycophancy": {
+    "t_statistic": 359.33178277402595,
+    "p_value": 7.079710956519989e-38,
+    "cohens_d": 82.43636464812045,
+    "ct_mean": 53.86068267822266,
+    "prompt_mean": 33.50873670578003,
+    "significant": true
+  },
+  "paired_ttest_ai_sounding": {
+    "t_statistic": 140.05034246550395,
+    "p_value": 4.186073968171383e-30,
+    "cohens_d": 32.12975209554709,
+    "ct_mean": 55.13037738800049,
+    "prompt_mean": 26.789863967895506,
+    "significant": true
+  },
+  "paired_ttest_hedging": {
+    "t_statistic": 28.42536443777865,
+    "p_value": 4.9347326973707543e-17,
+    "cohens_d": 6.521225843031157,
+    "ct_mean": 45.75516319274902,
+    "prompt_mean": 36.735661792755124,
+    "significant": true
+  }
+}

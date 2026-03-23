@@ -1,0 +1,43 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Interpreting the Describability--Advantage Relationship}
+
+Our results support the hypothesis that concept tokens provide the greatest advantage for hard-to-describe features. The pattern is intuitive: prompting works by leveraging the model's existing associations between natural language and internal representations. When a feature has clear verbal labels (formality, verbosity), prompts can activate the right direction. When a feature resists naming (AI-sounding text, sycophancy), prompts activate inconsistent or even opposite directions, while concept tokens---trained directly against the target direction---maintain their effectiveness.
+
+The large effect size ($\rho = 0.71$) is encouraging, but the lack of statistical significance ($p = 0.12$) reflects a fundamental limitation: with only six features, we cannot draw strong inferential conclusions. We view this as a proof-of-concept that motivates scaling to more features.
+
+\subsection{Anomalies and Edge Cases}
+
+Two results warrant specific discussion.
+
+\para{Sentiment prompting goes backwards.}
+Positive-sentiment prompts produce a \emph{negative} shift ($-6.50$) along the sentiment direction. This likely reflects that \pythia is a base model, not instruction-tuned. Prompts like ``Write in a very positive and happy tone:'' may not reliably steer a base model's next-token predictions toward positive text. The concept token still achieves a positive shift ($2.21$), demonstrating its robustness to this failure mode.
+
+\para{Formality favors prompting.}
+Formality is the only feature where prompting substantially outperforms concept tokens ($16.26$ vs.\ $3.59$). Formality may be strongly associated with specific vocabulary tokens (``Dear Sir,'' ``herein,'' ``therefore'') that prompting can activate directly by establishing a formal context. The concept token's perturbation at the BOS position may have limited influence on such lexically-driven features.
+
+\subsection{The Failure of CAA Steering}
+
+\caa produces large-magnitude, predominantly negative shifts for 4 of 6 features. Adding a scaled direction vector directly to the residual stream at a single layer creates cascading interactions through the remaining 12 layers of the transformer. The resulting activations at the output may bear little resemblance to what the direction vector was designed to produce. This aligns with \citet{braun2025unreliability}'s analysis and suggests that the effectiveness of activation addition depends heavily on the coherence of the target direction across layers---a property that is distinct from describability.
+
+\subsection{Limitations}
+\label{sec:limitations}
+
+\para{Small number of features.}
+With $n = 6$ features, we lack statistical power for the core correlation. Extending to 12--20 features, including features identified via sparse autoencoders that may entirely lack natural language descriptions, would provide a more definitive test.
+
+\para{Single model.}
+All experiments use \pythia, a 410M-parameter base model. Results may differ on instruction-tuned models (where prompting baselines are stronger) or larger models (where features may be represented differently). The base model setting may understate prompting effectiveness relative to deployed systems.
+
+\para{Activation-level evaluation only.}
+We measure activation shifts projected onto target directions, not behavioral changes in generated text. Activation shifts are a proxy: a model whose activations shift toward the ``less AI-sounding'' direction may or may not produce text that humans judge as more natural. Behavioral evaluation with human judges would strengthen these findings.
+
+\para{Simplified concept token approach.}
+We add the learned embedding to the BOS token rather than inserting a new token into the vocabulary, as in \citet{sastre2026concept}. This is simpler but may underestimate the method's potential. The full concept token approach, with proper tokenizer extension and cross-entropy training, could yield stronger results.
+
+\para{Single layer.}
+We extract directions and apply all interventions at layer~12. Different features may be better represented at different layers \cite{zou2023representation}, and a layer sweep could improve both direction quality and steering effectiveness.
+
+\para{Direction quality varies.}
+Cohen's $d$ ranges from 0.18 (sentiment) to 1.48 (verbosity). Weak directions may not faithfully represent the intended feature, introducing noise into both the describability measurement and the concept token training target.

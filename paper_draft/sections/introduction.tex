@@ -1,0 +1,18 @@
+\section{Introduction}
+\label{sec:intro}
+
+Language models encode behavioral features as linear directions in their residual streams \cite{park2024linear, zou2023representation}. Activation steering exploits this structure: by adding a direction vector during inference, practitioners can shift model behavior toward truthfulness \cite{li2023inference}, away from refusal \cite{arditi2024refusal}, or along many other axes \cite{turner2023steering, rimsky2023steering}. But what happens when the target behavior cannot be cleanly named in a prompt?
+
+Consider the difference between asking a model to ``write formally'' and asking it to ``sound less like an AI.'' The first request is precise---most people agree on what formality means, and diverse prompts activate similar internal directions. The second is vague: what makes text sound AI-generated is a gestalt judgment that resists decomposition into explicit instructions. We call features like this \emph{hard to describe}. They are practically important---controlling AI-sounding output, hedging, and sycophancy matters for deployed systems---yet the standard toolkit of prompt engineering and activation steering struggles with them precisely because these methods require the user to articulate the target behavior.
+
+{\bf Why does this matter?}
+\citet{braun2025unreliability} recently showed that steering vectors are unreliable when different prompt formulations produce directionally inconsistent vectors. This means that hard-to-describe features are doubly disadvantaged: not only can users not write good prompts for them, but the resulting steering vectors are themselves incoherent. Meanwhile, \citet{sastre2026concept} demonstrated that learned token embeddings---\concepttokens---can outperform explicit naming for specific tasks (62\% vs.\ 17\% for recasting), but no study has systematically measured \emph{how the relative advantage of concept tokens changes as features become harder to describe}.
+
+We fill this gap. We operationalize \describability as the consistency with which diverse natural language prompts activate a target direction in the residual stream. We then train concept token embeddings---single learned vectors added to the input---to reference each direction, and compare their effectiveness against explicit prompting across six features spanning easy to hard describability. Our core finding is that concept tokens provide the greatest advantage precisely where prompting fails most: for hard-to-describe features, concept tokens outperform prompting by up to 106\%, while for easy features, prompting performs adequately on its own. The Spearman correlation between expected feature difficulty and concept token advantage is $\rho = 0.71$.
+
+We make the following contributions:
+\begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
+    \item We propose \describability as a measurable property of residual stream directions---the consistency with which natural language prompts activate a given direction---and show that it varies substantially across behavioral features.
+    \item We demonstrate that concept tokens trained via embedding optimization can activate target directions for all six features tested, regardless of describability, achieving positive activation shifts even where prompting produces inconsistent or reversed effects.
+    \item We provide the first quantitative evidence that the advantage of learned embeddings over prompting increases with feature difficulty ($\rho = 0.71$), establishing a systematic relationship between describability and method effectiveness.
+\end{itemize}

@@ -1,0 +1,63 @@
+\section{Methodology}
+\label{sec:method}
+
+We conduct a three-stage experiment: (1)~extract feature directions from the residual stream, (2)~measure the describability of each direction, and (3)~train concept token embeddings and compare them against prompting baselines. All experiments use \pythia \cite{biderman2023pythia}, a 24-layer transformer with a 1024-dimensional residual stream, accessed via TransformerLens \cite{nanda2022transformerlens}.
+
+\subsection{Feature Selection and Data Construction}
+\label{sec:features}
+
+We select six behavioral features spanning a range of expected describability:
+
+\begin{itemize}[leftmargin=*,itemsep=1pt,topsep=2pt]
+    \item \textbf{Sentiment} (easy): positive vs.\ negative emotional tone.
+    \item \textbf{Formality} (easy): formal register vs.\ casual register.
+    \item \textbf{Verbosity} (medium): verbose, detailed text vs.\ concise, terse text.
+    \item \textbf{Sycophancy} (medium-hard): agreeable, flattering responses vs.\ honest, critical ones.
+    \item \textbf{AI-sounding} (hard): machine-like, templated text vs.\ natural, human-like text.
+    \item \textbf{Hedging} (hard): cautious, heavily qualified language vs.\ direct, assertive claims.
+\end{itemize}
+
+For each feature, we construct a contrastive dataset of 25 positive and 25 negative text examples (10 positive for verbosity, reflecting the brevity of concise examples). We also write 10 positive and 10 negative prompt variants per feature for describability measurement, and 20 neutral test texts for evaluation. All texts are tokenized with Pythia's tokenizer and truncated to 128 tokens for direction extraction and 64 tokens for concept token training and evaluation.
+
+\subsection{Direction Extraction}
+\label{sec:directions}
+
+For each feature $f$, we extract a direction vector $\vd_f \in \R^{1024}$ from the residual stream at layer~12 (the middle layer). Let $\gD_f^+ = \{\vx_1^+, \ldots, \vx_n^+\}$ and $\gD_f^- = \{\vx_1^-, \ldots, \vx_m^-\}$ denote the positive and negative example sets. We run each example through the model, extract the residual stream activation $\vh_i^{(\ell)}$ at layer $\ell = 12$ (averaged across token positions), and compute the direction as:
+\begin{equation}
+    \vd_f = \frac{1}{|\gD_f^+|} \sum_{i} \vh_i^{+} - \frac{1}{|\gD_f^-|} \sum_{j} \vh_j^{-}
+    \label{eq:direction}
+\end{equation}
+This mean difference approach follows \citet{turner2023steering} and \citet{rimsky2023steering}. We validate each direction by computing Cohen's $d$ between the projections of positive and negative examples onto $\vd_f$.
+
+\subsection{Describability Measurement}
+\label{sec:describability}
+
+We operationalize \describability as the consistency with which explicit prompts activate a target direction. For each feature $f$, we have 10 positive prompts $\{p_1^+, \ldots, p_{10}^+\}$ (\eg ``Write in a positive tone:'' for sentiment) and 10 negative prompts $\{p_1^-, \ldots, p_{10}^-\}$ (\eg ``Write in a negative tone:''). For each prompt pair $(p_i^+, p_i^-)$, we compute the model's residual stream activations at layer~12 on the same neutral completion text and measure the activation shift projected onto the target direction:
+\begin{equation}
+    s_i = \left(\vh(p_i^+) - \vh(p_i^-)\right) \cdot \hat{\vd}_f
+    \label{eq:describability}
+\end{equation}
+where $\hat{\vd}_f$ is the unit direction vector. The \describability score is $\bar{s}_f = \frac{1}{10}\sum_i s_i$. Higher scores indicate that prompts consistently push activations toward the intended direction; low or negative scores indicate that prompts fail to reliably reference the feature.
+
+\subsection{Concept Token Training}
+\label{sec:ct_training}
+
+For each feature $f$, we train a concept token embedding $\ve_f \in \R^{1024}$ that, when added to the BOS token's embedding, shifts the model's residual stream activations toward $\vd_f$. We initialize $\ve_f$ as the mean embedding of positive examples and optimize:
+\begin{equation}
+    \gL = -\cos(\Delta \vh, \vd_f) + \lambda \|\ve_f\|_2
+    \label{eq:ct_loss}
+\end{equation}
+where $\Delta \vh = \vh(\text{text} + \ve_f) - \vh(\text{text})$ is the activation shift at layer~12 caused by adding $\ve_f$ to the BOS position, and $\lambda = 0.01$ is a regularization coefficient. We optimize with Adam (learning rate $5 \times 10^{-3}$) for 300 steps with batch size~4. All six concept tokens converge within this budget.
+
+\subsection{Evaluation Protocol}
+\label{sec:evaluation}
+
+For each feature, we evaluate three methods on 20 neutral test texts:
+
+\para{Concept token (\ct).} We add the learned embedding $\ve_f$ to the BOS token position and measure the resulting activation shift at layer~12 projected onto $\vd_f$.
+
+\para{Prompting.} We prepend the best-performing positive prompt to each test text, compute activations at layer~12, and measure the shift relative to the unprompted baseline projected onto $\vd_f$.
+
+\para{Contrastive Activation Addition (\caa).} Following \citet{turner2023steering}, we add the scaled direction vector $\alpha \cdot \vd_f$ (with $\alpha = 3.0$) directly to the residual stream at layer~12 during the forward pass and measure the resulting activation shift.
+
+For each method and feature, we report the mean activation shift $\pm$ standard error across test texts. We assess the core hypothesis using Spearman rank correlation between expected feature difficulty (ordinal ranking) and concept token advantage (CT shift minus prompting shift).

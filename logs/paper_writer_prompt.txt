@@ -1,0 +1,801 @@
+You are an academic paper writer. Generate a complete NEURIPS style paper
+based on the experiment results provided.
+
+════════════════════════════════════════════════════════════════════════════════
+                         IMPORTANT: BEFORE YOU START
+════════════════════════════════════════════════════════════════════════════════
+
+Before writing any content, you MUST complete these steps:
+
+1. READ THE SKILL: Review the paper-writer skill at .claude/skills/paper-writer/SKILL.md
+2. READ THE STYLE GUIDE: Study templates/paper_writing/lab_style_guide.md carefully
+3. REVIEW EXAMPLES: Browse paper_examples/ for formatting and language patterns:
+   - Look at sections/1.introduction.tex for language style
+   - Look at tables/*.tex for table formatting
+   - Look at commands/*.tex for macro usage
+4. VERIFY COMMAND TEMPLATES: Command templates (math.tex, general.tex, macros.tex) are pre-copied to paper_draft/commands/
+
+CRITICAL: Reference example papers for FORMATTING and LANGUAGE STYLE only.
+Do NOT copy content, phrasing, or narrative structure from the example papers.
+The examples are in a different research domain - focus only on presentation style.
+
+════════════════════════════════════════════════════════════════════════════════
+                            EXPERIMENT REPORT
+════════════════════════════════════════════════════════════════════════════════
+
+# Manipulation of Hard-to-Describe Directions
+
+## 1. Executive Summary
+
+We tested whether learned token embeddings (&#34;concept tokens&#34;) provide a greater advantage over explicit prompting for manipulating residual stream directions that are harder to describe in natural language. Using Pythia-410M and six behavioral features ranging from easy-to-describe (sentiment, formality) to hard-to-describe (AI-sounding text, hedging), we found that **concept tokens consistently outperform explicit prompting for hard-to-describe features**, while prompting performs adequately for easy features. The Spearman correlation between expected feature difficulty and concept token advantage over prompting was rho=0.71, showing a large effect size despite limited statistical power (p=0.12 with n=6 features). This supports the hypothesis that finetuned token embeddings are especially valuable for manipulating directions that resist explicit naming.
+
+## 2. Goal
+
+**Hypothesis**: There exist directions in the residual stream of language models that are difficult to manipulate via explicit feature-naming prompts, but if a feature is linearly represented in the residual stream, it should be possible to finetune a new token to reference and manipulate it more easily.
+
+**Why this matters**: Activation steering and prompt engineering are powerful tools for controlling LLM behavior, but they break down when the target behavior can&#39;t be cleanly described in natural language. Many practically important features — like making text sound less AI-generated, controlling hedging patterns, or managing sycophancy — are difficult to verbalize precisely. If concept tokens can bridge this gap, they unlock a large class of model behaviors for practical control.
+
+**Gap filled**: While Braun et al. (2025) showed steering fails for non-coherent directions and Sastre &amp; Rosá (2026) demonstrated concept tokens outperform naming for specific tasks, no study has systematically measured how the **relative advantage** of concept tokens changes as features become harder to describe.
+
+## 3. Data Construction
+
+### Dataset Description
+We constructed contrastive text datasets for six behavioral features:
+
+| Feature | Difficulty | Description | # Positive | # Negative |
+|---------|-----------|-------------|-----------|-----------|
+| Sentiment | Easy | Positive vs negative emotional tone | 25 | 25 |
+| Formality | Easy | Formal vs casual register | 25 | 25 |
+| Verbosity | Medium | Verbose/detailed vs concise/terse | 10 | 25 |
+| Sycophancy | Medium-hard | Agreeable/flattering vs honest/critical | 25 | 25 |
+| AI-sounding | Hard | Machine-like vs human/natural text | 25 | 25 |
+| Hedging | Hard | Cautious/qualified vs direct/assertive | 25 | 25 |
+
+Each feature also includes 10 positive and 10 negative prompt variants for describability measurement, plus 20 neutral test texts for evaluation.
+
+### Example Samples
+
+**Sentiment (easy):**
+- Positive: &#34;I absolutely love this beautiful sunny day! Everything is going wonderfully.&#34;
+- Negative: &#34;This is the worst day ever. Everything keeps going wrong.&#34;
+
+**AI-sounding (hard):**
+- Positive (AI-like): &#34;That&#39;s a great question! I&#39;d be happy to help you with that. Let me break this down into manageable steps for you.&#34;
+- Negative (human-like): &#34;look, I&#39;ve been thinking about this and honestly? it&#39;s not that deep. most people overthink it.&#34;
+
+### Preprocessing
+All texts were tokenized using Pythia&#39;s tokenizer and truncated to 128 tokens for direction extraction and 64 tokens for concept token training/evaluation. BOS token was prepended.
+
+### Data Quality
+- All examples were manually curated to represent clear instances of each feature
+- No missing values or duplicates
+- Balanced positive/negative split for all features except verbosity (10/25 due to the nature of concise examples being very short)
+
+## 4. Experiment Description
+
+### Methodology
+
+#### High-Level Approach
+We conducted a three-stage experiment:
+1. **Direction extraction**: Compute feature directions via contrastive mean difference in the residual stream
+2. **Describability measurement**: Quantify how consistently explicit prompts activate each direction
+3. **Concept token training &amp; evaluation**: Train embedding vectors to activate target directions and compare against prompting
+
+#### Why This Method?
+- **Mean difference** for direction extraction is the simplest and most established approach (Turner et al., 2023; Rimsky et al., 2023)
+- **Prompt consistency** as a describability metric operationalizes the intuitive notion that &#34;easy&#34; features have many equivalent verbal descriptions
+- **Embedding optimization** directly tests the hypothesis that learned tokens can reference directions regardless of verbalizability
+
+### Implementation Details
+
+#### Tools and Libraries
+| Library | Version | Purpose |
+|---------|---------|---------|
+| PyTorch | 2.10.0+cu128 | Tensor computation |
+| TransformerLens | 2.15.4 | Model hooking and activation access |
+| transformers | 4.57.6 | Tokenization |
+| scipy | 1.17.1 | Statistical testing |
+| matplotlib | (latest) | Visualization |
+| numpy | (latest) | Numerical computation |
+
+#### Model
+- **Pythia-410M** (EleutherAI): 24 layers, 1024-dimensional residual stream
+- Accessed via TransformerLens for clean hook-based intervention
+- All experiments run at layer 12 (middle layer)
+
+#### Hyperparameters
+| Parameter | Value | Selection Method |
+|-----------|-------|------------------|
+| Target layer | 12 (middle) | Convention from prior work |
+| Concept token training steps | 300 | Sufficient for convergence |
+| Learning rate | 5e-3 | Adam default with manual tuning |
+| Batch size | 4 | GPU memory constraint |
+| CAA steering strength (alpha) | 3.0 | Standard from literature |
+| Max sequence length (training) | 64 | Efficiency |
+| Max sequence length (extraction) | 128 | Coverage |
+| Random seed | 42 | Standard |
+
+#### Concept Token Training Procedure
+1. Initialize embedding from mean of positive example embeddings
+2. For each step: sample 4 random texts, compute baseline activations, apply concept embedding as additive perturbation to BOS token position, compute modified activations
+3. Loss = -cosine_similarity(shift, target_direction) + 0.01 * embedding_norm
+4. Optimize with Adam for 300 steps
+5. All concept tokens converged to high cosine similarity (&gt;0.5 for all features)
+
+### Experimental Protocol
+
+#### Reproducibility Information
+- Single run with fixed seed (42)
+- Hardware: NVIDIA RTX A6000 (49 GB), CUDA 12.8
+- Total execution time: 5.1 minutes
+- All random seeds set (Python, NumPy, PyTorch)
+
+#### Evaluation Metrics
+1. **Direction activation shift**: Mean projection of (modified_activation - baseline_activation) onto the target direction vector. Measures how much each method shifts the residual stream toward the desired feature.
+2. **Describability score**: Mean shift achieved by contrasting positive vs. negative prompt pairs with the same completion text. Higher = prompts more consistently activate the direction.
+3. **Concept token advantage**: CT shift minus prompting shift. Positive = concept token is more effective than prompting.
+
+### Raw Results
+
+#### Direction Extraction Quality
+
+| Feature | Direction Separation | Cohen&#39;s d | Quality |
+|---------|---------------------|-----------|---------|
+| Sentiment | 2.79 | 0.18 | Weak but present |
+| Formality | 7.25 | 0.22 | Weak but present |
+| Verbosity | 242.73 | 1.48 | Very strong |
+| Sycophancy | 33.57 | 0.48 | Moderate |
+| AI-sounding | 51.09 | 0.43 | Moderate |
+| Hedging | 146.04 | 1.20 | Strong |
+
+#### Describability Scores
+
+| Feature | Mean Shift | Std | Expected Difficulty |
+|---------|-----------|-----|-------------------|
+| Sentiment | 1.17 | 0.74 | Easy |
+| Formality | -1.06 | 2.01 | Easy |
+| Verbosity | 10.27 | 5.18 | Medium |
+| Sycophancy | 2.24 | 6.00 | Medium-hard |
+| AI-sounding | -2.23 | 8.55 | Hard |
+| Hedging | 9.01 | 5.20 | Hard |
+
+Note: Negative describability means prompts tend to push activations *opposite* to the intended direction. High std indicates inconsistency across prompt formulations.
+
+#### Steering Effectiveness Comparison
+
+| Feature | Concept Token | Prompting | CAA | CT Advantage |
+|---------|:-------------|:---------|:----|:------------|
+| Sentiment | 2.21 ± 0.15 | -6.50 ± 1.28 | 106.86 ± 34.79 | +8.71 |
+| Formality | 3.59 ± 0.66 | 16.26 ± 2.61 | -301.32 ± 53.06 | -12.67 |
+| Verbosity | 19.10 ± 1.93 | 38.04 ± 6.14 | -806.05 ± 53.90 | -18.94 |
+| Sycophancy | 53.86 ± 5.52 | 33.51 ± 5.60 | -798.94 ± 53.68 | +20.35 |
+| AI-sounding | 55.13 ± 5.60 | 26.79 ± 4.76 | -813.21 ± 49.10 | +28.34 |
+| Hedging | 45.76 ± 4.64 | 36.74 ± 5.99 | -800.49 ± 57.52 | +9.02 |
+
+#### Output Locations
+- Results JSON: `results/experiment_results.json`
+- Describability scores: `results/describability_scores.json`
+- Statistical tests: `results/statistical_tests.json`
+- Configuration: `results/config.json`
+- Plots: `results/plots/main_results.png`, `results/plots/per_feature_distributions.png`, `results/plots/method_scatter.png`
+
+## 5. Result Analysis
+
+### Key Findings
+
+1. **Concept tokens successfully activate target directions for all 6 features** (all positive mean shifts), demonstrating that learned embeddings can reference residual stream directions regardless of their describability.
+
+2. **For hard-to-describe features, concept tokens outperform prompting:**
+   - Sycophancy: CT=53.86 vs Prompt=33.51 (+60% advantage)
+   - AI-sounding: CT=55.13 vs Prompt=26.79 (+106% advantage)
+   - Hedging: CT=45.76 vs Prompt=36.74 (+25% advantage)
+
+3. **For easy-to-describe features, prompting performs adequately:**
+   - Formality: Prompt=16.26 vs CT=3.59 (prompting 4.5x better)
+   - Verbosity: Prompt=38.04 vs CT=19.10 (prompting 2x better)
+
+4. **The concept token advantage increases with feature difficulty** (Spearman rho=0.71), supporting the core hypothesis.
+
+5. **CAA steering is unreliable**: Large-magnitude, often negative shifts indicate that directly adding vectors to activations at a single layer produces unpredictable interactions with the transformer&#39;s processing. This aligns with Braun et al. (2025)&#39;s findings on steering unreliability.
+
+### Hypothesis Testing Results
+
+**H1 (Features vary in describability)**: Supported. Describability scores range from -2.23 (AI-sounding) to 10.27 (verbosity), with high variance in prompt consistency for harder features (std up to 8.55 for AI-sounding vs 0.74 for sentiment).
+
+**H2 (Concept tokens activate directions regardless of describability)**: Supported. All six concept tokens produce positive mean activation shifts (range: 2.21 to 55.13), and training converged to high cosine similarity for all features (&gt;0.5 final loss improvement).
+
+**H3 (CT advantage is largest for hard features)**: Partially supported. Spearman correlation between expected difficulty and CT advantage: rho=0.71, p=0.12. The effect size is large but not statistically significant at p&lt;0.05 with only 6 data points. A power analysis suggests ~12 features would be needed for significance at this effect size.
+
+**Statistical tests:**
+- Expected difficulty vs CT advantage: Spearman rho=0.71, p=0.12
+- All per-feature paired t-tests (CT vs prompting) are significant at p&lt;0.001
+- All Cohen&#39;s d values for the per-feature comparisons exceed 4.0, indicating very large effect sizes
+
+### Comparison to Literature
+
+- Our concept token results are consistent with Sastre &amp; Rosá (2026), who found concept tokens outperform explicit naming for &#34;recasting&#34; (62% vs 17%), a behavior that is difficult to describe precisely
+- The unreliability of CAA steering aligns with Braun et al. (2025)&#39;s systematic finding that &#34;steering is unreliable when the target behavior is not represented by a coherent direction&#34;
+- The success of concept tokens on AI-sounding and hedging features — behaviors that lack clean natural language descriptions — extends the concept token framework to a new class of applications
+
+### Surprises and Insights
+
+1. **Sentiment prompting went backwards**: The positive sentiment prompt actually shifted activations *away* from the positive sentiment direction (mean = -6.50). This may be because Pythia-410M is a base model (not instruction-tuned), so prompts like &#34;Write in a very positive and happy tone:&#34; don&#39;t reliably steer its behavior.
+
+2. **Concept token training was remarkably stable**: All six features converged within 300 steps, with final cosine similarities &gt;0.5. The optimization landscape appears smooth despite the features&#39; varying natures.
+
+3. **The hardest features had the strongest concept token effects**: AI-sounding (55.13) and sycophancy (53.86) produced the largest absolute concept token shifts, suggesting that these directions may have particularly strong linear structure that the embedding can exploit.
+
+### Error Analysis
+
+- **CAA baseline is problematic**: The extremely large and often negative CAA shifts suggest our implementation needs refinement. Adding a scaled direction at `resid_pre` of a single layer creates cascading effects through subsequent layers. A more careful implementation would tune the alpha parameter per-feature.
+- **Formality prompting anomaly**: Formality prompting works well (16.26) but concept tokens underperform (3.59). This may be because the formality direction is strongly associated with specific vocabulary tokens that prompting can activate directly, while the concept token&#39;s perturbation at BOS position has limited influence.
+
+### Limitations
+
+1. **Small number of features (n=6)**: With only 6 data points for the core correlation, we cannot achieve statistical significance at conventional thresholds. The effect size (rho=0.71) is promising but needs replication with more features.
+
+2. **Single model (Pythia-410M)**: Results may not generalize to instruction-tuned models where prompting is more reliable, or to larger models where features may be represented differently.
+
+3. **Simplified concept token approach**: We add the concept embedding to the BOS token rather than truly adding a new token. This is simpler than the full concept token approach (Sastre &amp; Rosá, 2026) but may underestimate the method&#39;s potential.
+
+4. **No behavioral evaluation**: We only measure activation projections, not actual behavioral changes (e.g., whether generated text actually sounds less AI-like). Activation shifts are a proxy that may not perfectly correlate with observed behavior.
+
+5. **Direction quality varies**: The extracted directions have varying quality (Cohen&#39;s d from 0.18 to 1.48). Weak directions may not represent the intended features well.
+
+6. **Single layer**: We only extracted directions and applied interventions at layer 12. Different features may be better represented at different layers.
+
+## 6. Conclusions
+
+### Summary
+We found evidence supporting the hypothesis that finetuned token embeddings provide the greatest advantage over explicit prompting for features that are hard to describe in natural language. Across six behavioral features, concept tokens consistently activated target directions in the residual stream, and their advantage over prompting was largest for the hardest-to-describe features (AI-sounding text, hedging, sycophancy). The effect size is large (Spearman rho=0.71) though not statistically significant with n=6.
+
+### Implications
+- **Practical**: Concept tokens can serve as a lightweight tool for controlling model behaviors that resist prompt engineering — potentially useful for reducing AI-sounding output, managing hedging, or controlling sycophancy.
+- **Theoretical**: The finding that learned embeddings can reference hard-to-describe directions supports the linear representation hypothesis — these features exist as coherent directions even though they can&#39;t be named in natural language.
+- **Methodological**: This suggests a productive bridge between mechanistic interpretability (identifying directions) and practical control (using concept tokens to manipulate them).
+
+### Confidence in Findings
+**Medium confidence.** The pattern is consistent and the effect size is large, but the small number of features limits statistical power. The results align well with prior work (Braun et al., 2025; Sastre &amp; Rosá, 2026) and the theoretical framework.
+
+## 7. Next Steps
+
+### Immediate Follow-ups
+1. **Scale to more features** (12-20): Include features identified via SAE analysis that lack natural language descriptions, achieving statistical power for the core correlation
+2. **Behavioral evaluation**: Measure whether concept token steering produces the intended behavioral changes in generated text (e.g., human evaluation of AI-sounding-ness)
+3. **Layer sweep**: Test which layers are optimal for different features
+
+### Alternative Approaches
+- Use SAE features as ground-truth &#34;hard to describe&#34; directions, rather than manually-curated contrastive examples
+- Try the full concept token approach from Sastre &amp; Rosá (2026) with proper new-token insertion rather than BOS perturbation
+- Compare against representation tuning (Ackerman, 2024) as an additional baseline
+
+### Broader Extensions
+- Test on instruction-tuned models where the prompting baseline is stronger
+- Investigate multi-feature concept tokens that control several directions simultaneously
+- Connect to safety applications: many safety-relevant behaviors (deception, manipulation) may be &#34;hard to describe&#34;
+
+### Open Questions
+- Do concept tokens and prompting activate the same underlying mechanisms, or are they accessing the feature via different pathways?
+- Is there a principled way to predict which features will be hard to describe without testing empirically?
+- Can the describability-advantage relationship be formalized theoretically?
+
+## References
+
+1. Turner et al. (2023). &#34;Steering Language Models With Activation Engineering.&#34; arXiv:2308.10248.
+2. Rimsky et al. (2023). &#34;Steering Llama 2 via Contrastive Activation Addition.&#34; arXiv:2312.06681.
+3. Arditi et al. (2024). &#34;Refusal in Language Models Is Mediated by a Single Direction.&#34; arXiv:2406.11717.
+4. Braun et al. (2025). &#34;Understanding (Un)Reliability of Steering Vectors.&#34; arXiv:2407.12404.
+5. Sastre &amp; Rosá (2026). &#34;Concept Tokens: Learning Behavioral Embeddings Through Concept Definitions.&#34; arXiv:2601.04465.
+6. Ackerman (2024). &#34;Representation Tuning.&#34; arXiv:2409.06927.
+7. Li et al. (2023). &#34;Inference-Time Intervention: Eliciting Truthful Answers.&#34; arXiv:2310.01405.
+8. Zou et al. (2023). &#34;Representation Engineering.&#34; arXiv:2310.06824.
+9. Lester et al. (2021). &#34;The Power of Scale for Parameter-Efficient Prompt Tuning.&#34; arXiv:2104.08691.
+10. Park et al. (2024). &#34;The Linear Representation Hypothesis.&#34; arXiv:2401.12241.
+11. Shafran et al. (2026). &#34;From Directions to Regions.&#34; arXiv:2502.07640.
+12. Elhage et al. (2022). &#34;Toy Models of Superposition.&#34; arXiv:2209.10652.
+
+
+════════════════════════════════════════════════════════════════════════════════
+                            RESEARCH PLAN
+════════════════════════════════════════════════════════════════════════════════
+
+# Research Plan: Manipulation of Hard-to-Describe Directions
+
+## Motivation &amp; Novelty Assessment
+
+### Why This Research Matters
+Language models encode many behavioral features as linear directions in their residual streams, but not all are equally accessible via natural language prompting. While it&#39;s easy to prompt a model to &#34;be formal&#34; or &#34;rhyme,&#34; other features (e.g., reducing AI-sounding output, controlling coherence patterns) resist explicit naming. This limits the practical utility of activation steering and prompt engineering for a large class of model behaviors.
+
+### Gap in Existing Work
+Based on the literature review, Braun et al. (2025) demonstrate that steering fails when target behaviors lack coherent directional representations across prompts. Sastre &amp; Rosá (2026) show concept tokens can outperform explicit naming (62% vs 17% for recasting). However, **no study has systematically measured the relationship between a feature&#39;s &#34;describability&#34; and the relative advantage of learned token embeddings over prompting**.
+
+### Our Novel Contribution
+We test whether the gap between prompting effectiveness and concept-token effectiveness *increases* as features become harder to describe. Specifically, we:
+1. Operationalize &#34;describability&#34; as the consistency with which different natural language prompts activate a target direction
+2. Show that concept tokens trained via embedding optimization maintain effectiveness even when describability is low
+3. Provide the first quantitative evidence that learned tokens offer the most advantage precisely for hard-to-describe features
+
+### Experiment Justification
+- **Experiment 1 (Direction Extraction)**: Extract residual stream directions for multiple behavioral features to establish ground truth targets
+- **Experiment 2 (Describability Measurement)**: Quantify how well explicit prompts activate each direction — establishes the IV
+- **Experiment 3 (Concept Token Training)**: Train token embeddings to reference each direction — tests the core mechanism
+- **Experiment 4 (Comparative Evaluation)**: Compare prompting vs. concept tokens — tests the hypothesis that the advantage grows with difficulty
+
+## Research Question
+Does the advantage of learned token embeddings over explicit prompting increase as features become harder to describe in natural language, and can concept tokens effectively manipulate directions that prompting cannot?
+
+## Hypothesis Decomposition
+1. **H1**: Different features vary in &#34;describability&#34; — the consistency with which prompts activate their corresponding direction
+2. **H2**: Concept tokens trained on behavioral examples can activate target directions regardless of describability
+3. **H3**: The advantage of concept tokens over prompting is largest for hard-to-describe features
+
+## Proposed Methodology
+
+### Model
+- **Pythia-410M** (EleutherAI): Well-supported by TransformerLens, open weights, sufficient capacity to exhibit interesting behavioral directions, manageable for rapid iteration
+
+### Features to Study (Easy → Hard)
+1. **Sentiment** (easy): positive vs. negative — well-studied, many natural descriptions
+2. **Formality** (easy): formal vs. casual — clearly describable
+3. **Verbosity** (medium): verbose vs. concise — somewhat describable
+4. **Sycophancy** (medium-hard): agreeable vs. critical — can describe but hard to prompt consistently
+5. **AI-sounding** (hard): machine-like vs. human-like text — very hard to articulate what makes text &#34;sound like AI&#34;
+6. **Hedging** (hard): cautious/qualified vs. direct assertions — subtle linguistic pattern
+
+### Experimental Steps
+
+#### Step 1: Direction Extraction
+- For each feature, create 50 contrastive text pairs (positive vs. negative examples)
+- Run through Pythia-410M, extract residual stream activations at layer 12 (middle layer)
+- Compute mean difference vector as the feature direction
+- Validate: check cosine similarity within positive examples and between positive/negative
+
+#### Step 2: Describability Measurement
+- For each feature, write 10 diverse natural language prompts that attempt to invoke it
+  - e.g., for sentiment: &#34;Write positively:&#34;, &#34;Be optimistic:&#34;, &#34;Express happiness:&#34;, etc.
+  - For AI-sounding: &#34;Write like a human:&#34;, &#34;Sound natural:&#34;, &#34;Don&#39;t be robotic:&#34;, etc.
+- Measure how consistently each prompt set activates the target direction
+- Describability score = mean cosine similarity between prompt-induced activations and the target direction
+
+#### Step 3: Concept Token Training
+- Add a new token `&lt;concept_X&gt;` to the tokenizer for each feature
+- Training objective: optimize the token embedding so that when prepended to text, the model&#39;s residual stream activations shift toward the target direction
+- Loss = -cosine_similarity(activation_shift, target_direction) + λ * perplexity_preservation
+- Train for 500 steps with Adam, lr=1e-3
+
+#### Step 4: Comparative Evaluation
+- For each feature, generate 100 text completions under:
+  1. No intervention (baseline)
+  2. Best explicit prompt
+  3. Concept token prepended
+  4. Direct activation addition (CAA baseline)
+- Measure: projection onto target direction, behavioral classification accuracy
+
+### Baselines
+1. No intervention
+2. Explicit prompting (best of 10 prompts)
+3. Contrastive Activation Addition (CAA) at optimal layer
+4. Concept token (our method)
+
+### Evaluation Metrics
+1. **Direction activation**: Mean projection of completions onto target direction
+2. **Describability score**: Consistency of prompt-to-direction alignment (cosine sim)
+3. **Steering effectiveness**: Behavioral shift relative to baseline
+4. **Perplexity preservation**: Change in perplexity on WikiText-2
+
+### Statistical Analysis Plan
+- Pearson correlation between describability and prompting effectiveness
+- Paired t-tests comparing concept token vs. prompting for each feature
+- Two-way analysis: describability level × method interaction
+- Bootstrap confidence intervals (n=1000 resamples)
+
+## Expected Outcomes
+- Easy features: prompting ≈ concept tokens (both work well)
+- Hard features: prompting &lt;&lt; concept tokens (tokens still work, prompting fails)
+- Strong negative correlation between describability and concept-token advantage
+
+## Timeline
+1. Direction extraction &amp; validation: 15 min
+2. Describability measurement: 20 min
+3. Concept token training: 30 min
+4. Comparative evaluation: 20 min
+5. Analysis &amp; visualization: 15 min
+6. Documentation: 20 min
+
+## Potential Challenges
+- Some &#34;hard&#34; features may not be linearly represented → would refute part of hypothesis
+- Concept token training may not converge for all features → need careful lr tuning
+- Pythia-410M may lack capacity for subtle features → could scale to 1.4B
+
+## Success Criteria
+- Clear gradient of describability across features
+- Concept tokens show steering effect for ≥5/6 features
+- Statistically significant interaction between describability and method effectiveness
+
+
+════════════════════════════════════════════════════════════════════════════════
+                          LITERATURE REVIEW
+════════════════════════════════════════════════════════════════════════════════
+
+# Literature Review: Manipulation of Hard-to-Describe Directions
+
+## Research Area Overview
+
+This research sits at the intersection of **activation steering** (manipulating internal representations of language models at inference time), **soft prompt tuning** (learning token embeddings to control model behavior), and **mechanistic interpretability** (understanding how features are represented in neural networks). The central hypothesis is that some directions in a model&#39;s residual stream are &#34;hard to describe&#34; — they resist manipulation via explicit natural language prompts — but can still be accessed by finetuning a new token embedding to reference those directions.
+
+The field has rapidly matured since 2023. Activation steering via contrastive activation addition (CAA) is now well-established, but significant limitations have emerged: steering is unreliable when the target behavior is not represented by a coherent direction, and different prompt types yield directionally different vectors. Meanwhile, soft prompt tuning has shown that learned embeddings can compactly encode behavioral concepts, sometimes outperforming explicit natural language naming of the same concept.
+
+## Key Papers
+
+### 1. Steering Language Models With Activation Engineering (Turner et al., 2023)
+- **arXiv**: 2308.10248
+- **Key Contribution**: Introduced Activation Addition (ActAdd) — the foundational method of computing steering vectors from contrastive prompt pairs (e.g., &#34;Love&#34; vs &#34;Hate&#34;) and adding them to residual stream activations during inference.
+- **Methodology**: Contrast intermediate activations on prompt pairs to compute steering vectors. Add vectors during forward pass for inference-time control.
+- **Results**: SOTA on sentiment shift and detoxification using LLaMA-3 and OPT. Lightweight — works with a single pair of data points.
+- **Relevance**: The foundational paper for activation steering. Demonstrates that high-level concepts have linear directions in activation space, but relies on the user being able to *name* the contrastive concept in a prompt pair.
+
+### 2. Steering Llama 2 via Contrastive Activation Addition (Rimsky et al., 2023)
+- **arXiv**: 2312.06681
+- **Key Contribution**: Scaled CAA to behavioral steering on multiple-choice behavioral datasets. Showed that steering vectors from averaged activation differences are effective across many behaviors.
+- **Methodology**: Averages differences in residual stream activations between positive/negative behavior examples. Applies vectors at all token positions after the user&#39;s prompt.
+- **Results**: Significantly alters model behavior, effective over and on top of finetuning and system prompts.
+- **Code**: Available; evaluation datasets included.
+- **Relevance**: Key baseline method. However, the method requires the user to construct contrastive prompt pairs that explicitly describe the target behavior — the &#34;hard to describe&#34; problem.
+
+### 3. Refusal in Language Models Is Mediated by a Single Direction (Arditi et al., 2024)
+- **arXiv**: 2406.11717
+- **Key Contribution**: Demonstrated that refusal behavior across 13 chat models is mediated by a one-dimensional subspace in the residual stream. Erasing this direction disables refusal; adding it elicits refusal.
+- **519 citations** — highly influential work.
+- **Relevance**: Shows that some directions are easy to find and manipulate. The question is: what about directions that don&#39;t correspond to a single nameable behavior?
+
+### 4. Understanding (Un)Reliability of Steering Vectors (Braun et al., 2025)
+- **arXiv**: 2407.12404
+- **Key Contribution**: Systematic study of when steering fails. Finds that (1) no prompt type clearly outperforms others, (2) different prompt types produce directionally different vectors (low cosine similarity), (3) steering is unreliable when the target behavior is not represented by a coherent direction.
+- **Key Finding**: &#34;Vector steering is unreliable when the target behavior is not represented by a coherent direction.&#34;
+- **Relevance**: **Directly supports the research hypothesis.** If a concept can&#39;t be described coherently in prompts, contrastive activation addition fails. This motivates the need for an alternative approach (like learned token embeddings) to access these directions.
+
+### 5. Concept Tokens: Learning Behavioral Embeddings Through Concept Definitions (Sastre &amp; Rosá, 2026)
+- **arXiv**: 2601.04465
+- **Key Contribution**: Adds a new special token to a frozen LLM and learns only its embedding from natural language definitions. The concept token can then be used to steer behavior directionally (assert/negate).
+- **Methodology**: Replace concept mentions in a definitional corpus with a new token. Optimize only that token&#39;s embedding via cross-entropy loss on the frozen model. Use directionally at inference (e.g., &#34;Do not generate tc&#34; vs. &#34;Generate tc&#34;).
+- **Key Results**:
+  - Hallucination steering: Concept tokens reduce hallucinations comparably to providing full definitions in-context, but with much lower prompt overhead.
+  - Recasting: Concept tokens outperform explicit naming of the concept (&#34;recasting&#34;) — 62.33% recast rate vs 16.74% for just naming. Crucially, simply naming the technique fails to reliably induce the behavior.
+  - Better instruction compliance: Concept tokens preserve follow-up question generation (98.04%) vs in-context definitions (63.07%).
+- **Code**: https://github.com/nsuruguay05/concept_tokens
+- **Relevance**: **Most directly relevant paper.** Demonstrates that learning a token embedding can capture behavioral concepts more effectively than naming them. This is exactly the mechanism proposed in the research hypothesis — finetuning a new token to reference hard-to-describe directions.
+
+### 6. Representation Tuning (Ackerman, 2024)
+- **arXiv**: 2409.06927
+- **Key Contribution**: Extended activation steering by permanently finetuning steering vectors into the model using a dual loss function (cosine similarity of activations to target direction + standard token loss).
+- **Key Results**: Representation-tuned models show stronger behavioral effects than online steering and generalize better than token-loss-only finetuning.
+- **Code**: https://github.com/cma1114/representation_tuning
+- **Relevance**: Shows that the bridge between steering vectors and finetuning is productive. Related to our hypothesis of finetuning a token to reference internal directions.
+
+### 7. Inference-Time Intervention: Eliciting Truthful Answers (Li et al., 2023)
+- **arXiv**: 2310.01405
+- **Methodology**: Shifts activations during inference along truthful directions found in attention heads.
+- **Key Result**: Improves Alpaca&#39;s TruthfulQA truthfulness from 32.5% to 65.1%.
+- **951 citations** — foundational work.
+- **Relevance**: Demonstrates that LLMs have internal representations of truthfulness even when producing falsehoods. The internal direction exists but is not easily accessed via prompting.
+
+### 8. Representation Engineering (Zou et al., 2023)
+- **arXiv**: 2310.06824
+- **Key Contribution**: Introduced &#34;representation engineering&#34; — reading and controlling representations in LLMs by identifying directions corresponding to high-level concepts.
+- **Relevance**: Foundational framework for thinking about directions in activation space.
+
+### 9. The Power of Scale for Parameter-Efficient Prompt Tuning (Lester et al., 2021)
+- **arXiv**: 2104.08691
+- **Key Contribution**: Showed that learning soft prompts (continuous token embeddings) can match full finetuning at scale. As model size increases, prompt tuning becomes more competitive.
+- **Relevance**: Foundational method for learning token embeddings. Shows that soft tokens can encode complex task information.
+
+### 10. Prefix-Tuning (Li &amp; Liang, 2021)
+- **arXiv**: 2101.00190
+- **Key Contribution**: Optimizes continuous prefix vectors prepended to each layer&#39;s activations.
+- **Relevance**: Alternative approach to learning representations that steer behavior — works at all layers rather than just the embedding layer.
+
+### 11. From Directions to Regions (Shafran et al., 2026)
+- **arXiv**: 2502.07640
+- **Key Contribution**: Argues that single global directions are insufficient for many concepts. Uses Mixture of Factor Analyzers (MFA) to model activation space as a collection of Gaussian regions with local covariance structure.
+- **Key Finding**: MFA outperforms unsupervised baselines and is competitive with supervised methods for concept localization and steering.
+- **Relevance**: Directly addresses the limitation of linear direction assumptions. Some &#34;hard to describe&#34; directions may not be single linear directions at all.
+
+### 12. Toy Models of Superposition (Elhage et al., 2022)
+- **arXiv**: 2209.10652
+- **Key Contribution**: Foundational work on how neural networks represent more features than they have dimensions, through superposition.
+- **Relevance**: Provides theoretical grounding for why some features may be hard to isolate via simple contrastive methods — they may be in superposition with other features.
+
+### 13. The Linear Representation Hypothesis (Park et al., 2024)
+- **arXiv**: 2401.12241
+- **Key Contribution**: Formalizes and tests the hypothesis that high-level concepts are represented as linear directions in activation space.
+- **Relevance**: If the hypothesis holds, then hard-to-describe directions still exist as linear features — they just can&#39;t be easily referenced via natural language.
+
+## Common Methodologies
+
+1. **Contrastive Activation Addition (CAA)**: Used in Turner 2023, Rimsky 2023, Arditi 2024. Compute steering vectors from contrastive prompt pairs. Limitation: requires describable contrastive concepts.
+2. **Soft Prompt / Token Embedding Optimization**: Used in Lester 2021, Li 2021, Sastre 2026. Learn embeddings that steer behavior. Advantage: does not require explicit concept naming.
+3. **Representation Tuning**: Ackerman 2024. Finetune models to internalize steering directions via cosine similarity loss.
+4. **Sparse Autoencoders (SAEs)**: Used in many recent papers to extract interpretable features from residual streams. Can identify directions that resist natural language description.
+
+## Standard Baselines
+
+- **No intervention**: Unmodified model output
+- **Prompting baselines**: Explicit instruction (e.g., &#34;be truthful&#34;), system prompt
+- **In-context definitions**: Providing concept definitions in the prompt
+- **CAA steering**: Adding contrastive vectors to residual stream
+- **SAE feature steering**: Clamping specific SAE features
+
+## Evaluation Metrics
+
+- **TruthfulQA**: Truthfulness and informativeness scores
+- **HotpotQA**: Correct/Hallucination/No Answer rates and Precision
+- **Behavioral MCQ**: Answer matching on contrastive multiple choice
+- **LLM-as-judge**: GPT-4/Claude evaluation of response quality
+- **Perplexity**: Preservation of general capabilities (WikiText)
+
+## Datasets in the Literature
+
+- **TruthfulQA** (Lin et al., 2022): Standard truthfulness benchmark, used in ITI, RepTuning
+- **HotpotQA** (Yang et al., 2018): Multi-hop QA, used in Concept Tokens
+- **StereoSet**: Bias evaluation, used in bias steering papers
+- **Custom contrastive pairs**: Various authors generate their own (Rimsky, Turner, Arditi)
+
+## Gaps and Opportunities
+
+1. **No systematic study of &#34;hard to describe&#34; features**: While Braun et al. (2025) show that steering fails when concepts lack coherent directions, no one has systematically categorized which concepts are hard to describe or why.
+2. **Concept Tokens haven&#39;t been applied to activation-space-identified features**: Sastre &amp; Rosá (2026) learn from natural language definitions. The research hypothesis proposes using SAE-identified or probing-identified features as the target, even when no natural language description suffices.
+3. **Bridge between soft prompt tuning and mechanistic interpretability**: The two fields have developed largely independently. Connecting learned token embeddings to specific residual stream directions (via analysis of what directions the learned embedding activates) is unexplored.
+4. **Evaluation of steering on non-describable concepts**: All current steering evaluations use concepts that have clear natural language descriptions (honesty, refusal, sentiment). Testing on concepts that resist description would validate the hypothesis.
+
+## Recommendations for Our Experiment
+
+- **Recommended datasets**: TruthfulQA (for truthfulness steering evaluation), HotpotQA (for hallucination steering), custom contrastive pairs for specific features
+- **Recommended baselines**: CAA steering, explicit prompting, in-context definitions, unmodified model
+- **Recommended metrics**: Behavioral accuracy on steering tasks, cosine similarity between learned token activations and target directions, perplexity preservation
+- **Methodological considerations**:
+  1. Start with a feature that IS describable (e.g., honesty) and verify that a learned token can steer it
+  2. Then identify features via SAEs or probes that lack clean natural language descriptions
+  3. Train concept tokens to reference those features using behavioral examples rather than definitions
+  4. Compare effectiveness against CAA with various prompt formulations
+  5. Use TransformerLens or nnsight for activation analysis
+
+
+════════════════════════════════════════════════════════════════════════════════
+                          PAPER REQUIREMENTS
+════════════════════════════════════════════════════════════════════════════════
+
+Generate a complete academic paper with the following structure:
+
+1. TITLE
+   - Clear, specific, informative
+   - Should convey main finding or contribution
+
+2. AUTHOR
+   - Use this exact author line in the \author{} block: Ari Holtzman and NeuriCo
+
+3. ABSTRACT (150-250 words)
+   - Problem statement
+   - Approach
+   - Key results
+   - Significance
+
+4. INTRODUCTION
+   - Research problem and motivation
+   - Gap in existing work
+   - Our contribution (be specific)
+   - Paper organization
+
+5. RELATED WORK
+   - Organized by theme/approach
+   - Position our work relative to prior work
+   - Cite papers from literature review
+
+6. METHODOLOGY
+   - Clear description of approach
+   - Experimental setup
+   - Datasets used
+   - Evaluation metrics
+   - Baselines
+
+7. RESULTS
+   - Present results with tables and figures
+   - Statistical analysis
+   - Comparison to baselines
+   - Ablation studies (if applicable)
+
+8. DISCUSSION
+   - Interpretation of results
+   - Limitations
+   - Broader implications
+
+9. CONCLUSION
+   - Summary of contributions
+   - Key findings
+   - Future work
+
+10. REFERENCES
+   - BibTeX format
+   - All cited papers
+
+════════════════════════════════════════════════════════════════════════════════
+                          OUTPUT FORMAT
+════════════════════════════════════════════════════════════════════════════════
+
+Create a MODULAR LaTeX project with the following directory structure:
+
+paper_draft/
+├── main.tex              # Main file that imports all sections
+├── references.bib        # BibTeX references
+├── sections/
+│   ├── abstract.tex      # Abstract content
+│   ├── introduction.tex  # Introduction section
+│   ├── related_work.tex  # Related work section
+│   ├── methodology.tex   # Methodology section
+│   ├── results.tex       # Results section
+│   ├── discussion.tex    # Discussion section
+│   └── conclusion.tex    # Conclusion section
+├── figures/              # Directory for any generated figures
+├── tables/               # Directory for complex standalone tables
+└── appendix/             # Directory for appendix sections (if needed)
+
+INSTRUCTIONS:
+1. First, create the directory structure above (mkdir -p paper_draft/sections paper_draft/figures paper_draft/tables paper_draft/appendix)
+2. Write main.tex using the EXACT preamble for NEURIPS:
+
+   \documentclass{article}
+   \usepackage[final]{neurips_2025}  % NEURIPS style (neurips_2025.sty is in paper_draft/)
+   \usepackage[hidelinks]{hyperref}  % REQUIRED: clickable links
+   \usepackage{booktabs}  % REQUIRED: professional tables
+   \usepackage{graphicx}
+   \usepackage{amsmath,amssymb}
+
+   % Import command files
+   \input{commands/math}
+   \input{commands/general}
+   \input{commands/macros}
+
+   % Use this bibliography style:
+   \bibliographystyle{plainnat}
+
+   \author{Ari Holtzman and NeuriCo}
+
+   - Use \input{sections/...} to include each section
+   - Use \bibliography{references} for references
+3. Write each section file with COMPLETE content (no placeholders)
+4. Each section file should include its \section{} command
+5. Write references.bib with all citations in BibTeX format
+6. After writing all files, compile the paper:
+   cd paper_draft && pdflatex -interaction=nonstopmode main.tex && bibtex main && pdflatex -interaction=nonstopmode main.tex && pdflatex -interaction=nonstopmode main.tex
+
+This modular structure allows humans to easily:
+- Edit individual sections without navigating a large file
+- Track changes per section
+- Reuse sections across different paper versions
+
+════════════════════════════════════════════════════════════════════════════════
+                          QUALITY REQUIREMENTS
+════════════════════════════════════════════════════════════════════════════════
+
+- Academic tone throughout
+- All claims must be supported by data from the experiment report
+- Proper citations using \cite{} commands
+- Clear figures and tables with proper captions
+- NO placeholder text - every section must have real content
+- The paper MUST compile without errors
+- If compilation fails, debug and fix the LaTeX errors
+
+════════════════════════════════════════════════════════════════════════════════
+                          LAB WRITING STYLE
+════════════════════════════════════════════════════════════════════════════════
+
+Follow these lab-specific conventions to match our paper style:
+
+1. LANGUAGE STYLE:
+   - Use active voice: "We propose", "We examine", "We focus on"
+   - Be direct and confident: "Our main question is...", "We hypothesize that..."
+   - State things clearly and simply - prefer plain language over jargon
+   - Use bold questions as paragraph organizers: {\bf what is X?}
+   - Include specific quantitative claims: "8.97% over baseline"
+   - Avoid fancy wording: "utilize" → "use", "facilitate" → "help"
+
+2. INTRODUCTION STRUCTURE:
+   - Engaging hook (get to the point quickly)
+   - Problem importance
+   - Gap identification
+   - Your approach with method figure reference
+   - Quantitative preview of results
+   - Contribution bullets (3-4 items, action verbs)
+
+3. CONTRIBUTION LISTS:
+   \begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
+       \item We propose...
+       \item We conduct...
+       \item We complement...
+   \end{itemize}
+
+4. MODULAR COMMANDS STRUCTURE:
+   Command templates are pre-copied to paper_draft/commands/:
+   - math.tex: Math notation macros
+   - general.tex: Formatting macros
+   - macros.tex: Project-specific term definitions (customize this for your paper)
+
+   In main.tex, include:
+   \input{commands/math}
+   \input{commands/general}
+   \input{commands/macros}
+
+5. REFERENCE CONVENTIONS:
+   Use reference macros from math.tex:
+   - \figref{fig:name} for "figure 1" (lowercase, in-sentence)
+   - \Figref{fig:name} for "Figure 1" (capitalized, start of sentence)
+   - \secref{sec:name} for "section 2"
+
+6. TEXT FORMATTING:
+   - Use \para{Header text} for bold paragraph headers
+   - Define method/dataset names with \textsc and \xspace:
+     \newcommand{\methodname}{\textsc{MethodName}\xspace}
+
+7. TABLE FORMATTING:
+   - Use booktabs package (no vertical lines)
+   - Use \resizebox{\textwidth}{!}{...} for wide tables
+   - Use @{} to remove padding at table edges
+   - Use \cmidrule(lr){x-y} for sub-headers
+   - Use \textsc{} for dataset/method names in headers
+   - Bold best results with {\bf ...}
+
+8. FIGURE FORMATTING:
+   - Use 0.32\textwidth for 3-column subfigures
+   - Use 0.95\linewidth for full-width figures
+   - Use \input{figures/legend} for shared legends
+   - Write self-contained captions explaining key observations
+
+9. RESULTS PRESENTATION:
+   - Define \increase and \decrease for colored arrows (green up, red down)
+   - Bold best results in tables
+   - Report confidence intervals when available
+
+10. ALGORITHM STYLING:
+    - Use algpseudocode with [noend]
+    - Use \triangleright for comments
+
+11. HYPERLINKS (REQUIRED):
+    - Always use \usepackage[hidelinks]{hyperref} or with colored links
+    - All citations, section refs, figure refs, table refs must be clickable
+    - This is essential for reader navigation
+
+════════════════════════════════════════════════════════════════════════════════
+                          WORKFLOW: REVIEW AND REFLECT
+════════════════════════════════════════════════════════════════════════════════
+
+Before calling finish, you MUST complete these review steps:
+
+1. REVIEW RESOURCES (at the start):
+   - Read .claude/skills/paper-writer/SKILL.md for detailed guidance
+   - Study templates/paper_writing/lab_style_guide.md for style conventions
+   - Browse paper_examples/ for formatting and language patterns
+
+2. SELF-REFLECTION (before finishing):
+   After writing all sections, review your work against these criteria:
+
+   LANGUAGE CHECK:
+   - [ ] Is the writing clear and jargon-free?
+   - [ ] Are claims specific with quantitative support?
+   - [ ] Is active voice used throughout?
+
+   FORMATTING CHECK:
+   - [ ] Does main.tex include \input{commands/math}, \input{commands/general}, \input{commands/macros}?
+   - [ ] Is hyperref package included for clickable references?
+   - [ ] Do tables use booktabs (no vertical lines)?
+   - [ ] Are best results bolded in tables?
+   - [ ] Are figures/tables properly captioned?
+
+   STRUCTURE CHECK:
+   - [ ] Does introduction follow: hook → importance → gap → approach → preview → contributions?
+   - [ ] Are contribution bullets specific with action verbs?
+   - [ ] Does the paper compile without errors?
+
+3. FIX ISSUES:
+   - Address any issues found in the self-reflection
+   - Re-compile and verify the PDF looks correct
+
+Only after completing this review should you consider the paper finished.

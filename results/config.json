@@ -1,0 +1,21 @@
+{
+  "seed": 42,
+  "model": "pythia-410m",
+  "device": "cuda:0",
+  "layer": "middle (n_layers // 2)",
+  "n_concept_token_steps": 300,
+  "concept_token_lr": 0.005,
+  "caa_alpha": 3.0,
+  "n_test_texts": 20,
+  "n_contrastive_pairs": 25,
+  "n_prompts_per_feature": 10,
+  "features": [
+    "sentiment",
+    "formality",
+    "verbosity",
+    "sycophancy",
+    "ai_sounding",
+    "hedging"
+  ],
+  "elapsed_seconds": 306.65099811553955
+}
